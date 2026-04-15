@@ -3,12 +3,12 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>模拟安装照明电路 - 触摸版</title>
+    <title>模拟安装照明电路</title>
     <style>
         * {
             user-select: none;
             box-sizing: border-box;
-            touch-action: none; /* 完全禁止触摸滚动/缩放，由js处理所有触摸行为 */
+            touch-action: none; /* 完全禁止触摸滚动/缩放 */
         }
 
         body {
@@ -555,7 +555,7 @@
             return true;
         }
 
-        // ----- 图形绘制 (保持原样) -----
+        // ----- 图形绘制 -----
         function drawFurniture(f) {
             ctx.save();
             ctx.fillStyle = "#c9b07e";
@@ -713,18 +713,26 @@
             }
         }
 
-        // ---------- 触摸坐标转换 ----------
-        function getCanvasCoords(e) {
+        // ---------- 触摸坐标转换 (支持 touchend 使用 changedTouches) ----------
+        function getCanvasCoordsFromTouch(touch) {
             const rect = canvas.getBoundingClientRect();
             const scaleX = canvas.width / rect.width;
             const scaleY = canvas.height / rect.height;
-            let clientX = e.touches[0].clientX;
-            let clientY = e.touches[0].clientY;
-            let mx = (clientX - rect.left) * scaleX;
-            let my = (clientY - rect.top) * scaleY;
+            let mx = (touch.clientX - rect.left) * scaleX;
+            let my = (touch.clientY - rect.top) * scaleY;
             mx = Math.min(Math.max(mx, 0), width);
             my = Math.min(Math.max(my, 0), height);
             return { mx, my };
+        }
+
+        // 通用坐标获取：用于触摸移动和开始
+        function getCanvasCoords(e) {
+            if (e.touches && e.touches.length > 0) {
+                return getCanvasCoordsFromTouch(e.touches[0]);
+            } else if (e.changedTouches && e.changedTouches.length > 0) {
+                return getCanvasCoordsFromTouch(e.changedTouches[0]);
+            }
+            return { mx: 0, my: 0 };
         }
 
         // ---------- 命中测试 (复用) ----------
@@ -900,7 +908,6 @@
             return false;
         }
 
-        // 清除拖拽状态
         function cancelDrag() {
             isDraggingComponent = false;
             draggedComp = null;
@@ -936,7 +943,7 @@
                     pendingDragTarget = null;
                 }
 
-                // 启动长按定时器 (2秒)
+                // 启动长按定时器
                 longPressTimer = setTimeout(() => {
                     if (pendingDragTarget && !isLongPressing && !isWireMode) {
                         isLongPressing = true;
@@ -1024,7 +1031,6 @@
             drawAll();
         }
 
-        // 双击事件用于导线拐点
         function onDoubleTap(e) {
             e.preventDefault();
             const { mx, my } = getCanvasCoords(e);
@@ -1034,7 +1040,7 @@
             }
         }
 
-        // 元件库和按钮逻辑
+        // 元件放置：使用 canvas 的 click 事件（移动端也会触发，但为了统一体验，利用触摸放置）
         function setupLibrary() {
             document.querySelectorAll('.comp-item[data-type]').forEach(item => {
                 item.addEventListener('click', (e) => {
@@ -1046,22 +1052,13 @@
                     document.getElementById('hintMessage').innerHTML = `👉 点击设计区放置${pendingAddType==='bulb'?'灯泡':pendingAddType==='battery'?'电源':'开关'}`;
                 });
             });
+            // 使用触摸放置：监听 canvas 的 click 事件，但注意与 tap 区分。这里简单处理：在非拖拽且未长按时，如果 pendingAddType 存在则放置
             canvas.addEventListener('click', (e) => {
-                if(pendingAddType) {
-                    const rect = canvas.getBoundingClientRect();
-                    const scaleX = canvas.width / rect.width;
-                    const scaleY = canvas.height / rect.height;
-                    // 注意：click事件的坐标获取需要兼容触摸，但这里只是元件放置，可用鼠标坐标或触摸坐标
-                    let clientX = e.clientX;
-                    let clientY = e.clientY;
-                    if (e.touches) {
-                        clientX = e.touches[0].clientX;
-                        clientY = e.touches[0].clientY;
-                    }
-                    let mx = (clientX - rect.left) * scaleX;
-                    let my = (clientY - rect.top) * scaleY;
+                if (pendingAddType) {
+                    const { mx, my } = getCanvasCoords(e);
                     addComponent(pendingAddType, mx, my);
                     pendingAddType = null;
+                    e.preventDefault();
                 }
             });
         }
@@ -1102,7 +1099,6 @@
             canvas.addEventListener('touchmove', onTouchMove, { passive: false });
             canvas.addEventListener('touchend', onTouchEnd);
             canvas.addEventListener('touchcancel', onTouchCancel);
-            // 双击检测 (利用 touchend 计数简单实现，这里使用 dblclick 事件在触摸屏上也会触发)
             canvas.addEventListener('dblclick', onDoubleTap);
             updateCircuit();
         }
