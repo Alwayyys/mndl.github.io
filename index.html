@@ -5,10 +5,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>模拟安装照明电路</title>
     <style>
+        /* 移除全局 touch-action: none，只限制 canvas */
         * {
             user-select: none;
             box-sizing: border-box;
-            touch-action: none; /* 完全禁止触摸滚动/缩放 */
         }
 
         body {
@@ -114,7 +114,7 @@
             background: #fdf8ed;
             border-radius: 8px;
             box-shadow: 0 4px 12px rgba(0,0,0,0.1);
-            touch-action: none;
+            touch-action: none;  /* 仅 canvas 禁用滚动/缩放，保留触摸事件处理 */
         }
 
         .components-bar {
@@ -152,7 +152,7 @@
             transition: 0.2s;
             box-shadow: 0 4px 8px rgba(0,0,0,0.1);
             border: 1px solid #e2cf9e;
-            touch-action: manipulation;
+            touch-action: manipulation; /* 允许按钮正常点击 */
         }
         .comp-item:active { opacity: 0.7; }
         .comp-icon { width: 64px; height: 64px; background: #efe3ce; border-radius: 40px; display: flex; align-items: center; justify-content: center; font-size: 2.3rem; }
@@ -218,7 +218,7 @@
     <div class="hint-area">
         <div class="hint-text">
             <span>💡 提示栏</span>
-            <span id="hintMessage">✨ 短按=点击/选中/开关切换 | 长按2秒=拖拽移动元件/家具</span>
+            <span id="hintMessage">✨ 短按=点击/选中/开关切换 | 长按0.4秒=拖拽移动元件/家具</span>
             <div class="status-led" id="hintLed"></div>
         </div>
     </div>
@@ -247,16 +247,16 @@
     </div>
 
     <div class="instructions">
-        <span>🪑 可拖拽家具：门窗/床/桌 直接长按2秒拖拽移动</span>
+        <span>🪑 可拖拽家具：门窗/床/桌 长按0.4秒拖拽移动</span>
         <span>💡 双击导线增加直角控制点，拖拽圆点改变走向</span>
         <span>🔘 单击开关文字区闭合/断开，长按空白处拖拽移动</span>
-        <span>📱 触摸操作：短按=点击，长按2秒=拖拽</span>
+        <span>📱 触摸操作：短按=点击，长按0.4秒=拖拽</span>
     </div>
 </div>
 
 <script>
     (function(){
-        // ----- 1. 并查集 (管理所有引脚) -----
+        // ----- 并查集 (管理引脚) -----
         class UnionFind {
             constructor() {
                 this.parent = new Map();
@@ -317,7 +317,7 @@
         let furnitures = [
             { id: 'door', name: '🚪 门', x: width-115, y: 200, w: 105, h: 180, text: '门' },
             { id: 'window', name: '🪟 窗户', x: 60, y: 30, w: 150, h: 120, text: '窗户' },
-            { id: 'bed', name: '🛏️ 床', x: 680, y: 420, w: 210, h: 150, text: '床' },
+            { id: 'bed', name: '🛏️ 床', x: 680, y: 420, w: 300, h: 150, text: '床' },
             { id: 'desk', name: '📚 书桌', x: 30, y: 450, w: 180, h: 120, text: '书桌' }
         ];
 
@@ -336,11 +336,11 @@
         let selectedCompId = null;
         let pendingAddType = null;
 
-        // 触摸长按拖拽支持
+        // 触摸长按拖拽 (长按时长改为400ms)
         let longPressTimer = null;
         let isLongPressing = false;
         let touchStartX = 0, touchStartY = 0;
-        let pendingDragTarget = null; // { type, target }
+        let pendingDragTarget = null;
         let touchActive = false;
 
         function generatePinId() { return nextPinId++; }
@@ -488,7 +488,7 @@
                 if (hasBattery && components.some(c => c.type === 'bulb')) {
                     hintDiv.innerHTML = "❌ 未形成有效回路。请检查导线连接与开关状态，确保灯泡两端分别与电源正负极连通 ❌";
                 } else {
-                    hintDiv.innerHTML = "✨ 短按=点击/选中/开关切换 | 长按2秒=拖拽移动元件/家具 ✨";
+                    hintDiv.innerHTML = "✨ 短按=点击/选中/开关切换 | 长按0.4秒=拖拽移动元件/家具 ✨";
                 }
                 ledDot.style.backgroundColor = "#e67e22";
             }
@@ -555,7 +555,7 @@
             return true;
         }
 
-        // ----- 图形绘制 -----
+        // 图形绘制
         function drawFurniture(f) {
             ctx.save();
             ctx.fillStyle = "#c9b07e";
@@ -713,7 +713,7 @@
             }
         }
 
-        // ---------- 触摸坐标转换 (支持 touchend 使用 changedTouches) ----------
+        // 触摸坐标转换 (支持touches和changedTouches)
         function getCanvasCoordsFromTouch(touch) {
             const rect = canvas.getBoundingClientRect();
             const scaleX = canvas.width / rect.width;
@@ -725,7 +725,6 @@
             return { mx, my };
         }
 
-        // 通用坐标获取：用于触摸移动和开始
         function getCanvasCoords(e) {
             if (e.touches && e.touches.length > 0) {
                 return getCanvasCoordsFromTouch(e.touches[0]);
@@ -735,7 +734,7 @@
             return { mx: 0, my: 0 };
         }
 
-        // ---------- 命中测试 (复用) ----------
+        // 命中测试
         function hitTestTerminal(mx, my, radius=13) {
             for(let comp of components) {
                 for(let t=0; t<2; t++) {
@@ -873,7 +872,7 @@
             drawAll();
         }
 
-        // 开始拖拽 (长按触发)
+        // 长按拖拽开始
         function startLongPressDrag(target, mx, my) {
             if (target.type === 'comp') {
                 draggedComp = target.target;
@@ -889,7 +888,6 @@
             }
         }
 
-        // 更新拖拽
         function updateDrag(mx, my) {
             if (isDraggingComponent && draggedComp) {
                 draggedComp.x = Math.min(Math.max(mx + dragOffsetX, 45), width-45);
@@ -914,16 +912,17 @@
             draggedFurniture = null;
         }
 
-        // ---------- 触摸事件 ----------
+        // 触摸事件（只对canvas preventDefault，避免破坏按钮）
         function onTouchStart(e) {
-            e.preventDefault();
+            if (e.target === canvas) {
+                e.preventDefault();
+            }
             if (!touchActive) {
                 touchActive = true;
                 const { mx, my } = getCanvasCoords(e);
                 touchStartX = mx;
                 touchStartY = my;
 
-                // 优先检测导线控制点
                 const hitWp = hitTestWaypoint(mx, my);
                 if (hitWp) {
                     draggingWaypointIndex = hitWp;
@@ -932,7 +931,6 @@
                     return;
                 }
 
-                // 检测拖拽目标 (元件或家具)
                 const hitComp = findComponentAt(mx, my);
                 const hitFur = findFurnitureAt(mx, my);
                 if (hitComp) {
@@ -943,19 +941,21 @@
                     pendingDragTarget = null;
                 }
 
-                // 启动长按定时器
+                // 长按定时器 400ms
                 longPressTimer = setTimeout(() => {
                     if (pendingDragTarget && !isLongPressing && !isWireMode) {
                         isLongPressing = true;
                         startLongPressDrag(pendingDragTarget, touchStartX, touchStartY);
                     }
                     longPressTimer = null;
-                }, 2000);
+                }, 400);
             }
         }
 
         function onTouchMove(e) {
-            e.preventDefault();
+            if (e.target === canvas) {
+                e.preventDefault();
+            }
             if (!touchActive) return;
 
             if (draggingWaypointIndex !== null) {
@@ -974,7 +974,6 @@
                 return;
             }
 
-            // 未拖拽时，移动超过阈值则取消长按
             if (longPressTimer && pendingDragTarget) {
                 const { mx, my } = getCanvasCoords(e);
                 const dx = mx - touchStartX;
@@ -988,8 +987,22 @@
         }
 
         function onTouchEnd(e) {
-            e.preventDefault();
+            if (e.target === canvas) {
+                e.preventDefault();
+            }
             touchActive = false;
+
+            // 处理元件放置（使用 touchend，不再依赖 click）
+            if (pendingAddType && e.target === canvas) {
+                const { mx, my } = getCanvasCoords(e);
+                addComponent(pendingAddType, mx, my);
+                pendingAddType = null;
+                if (longPressTimer) clearTimeout(longPressTimer);
+                longPressTimer = null;
+                pendingDragTarget = null;
+                isLongPressing = false;
+                return;
+            }
 
             if (draggingWaypointIndex !== null) {
                 draggingWaypointIndex = null;
@@ -1008,7 +1021,6 @@
             }
 
             if (longPressTimer) {
-                // 未触发长按，执行短按点击
                 clearTimeout(longPressTimer);
                 longPressTimer = null;
                 if (!isLongPressing && !draggingWaypointIndex) {
@@ -1021,7 +1033,9 @@
         }
 
         function onTouchCancel(e) {
-            e.preventDefault();
+            if (e.target === canvas) {
+                e.preventDefault();
+            }
             touchActive = false;
             clearTimeout(longPressTimer);
             cancelDrag();
@@ -1040,7 +1054,7 @@
             }
         }
 
-        // 元件放置：使用 canvas 的 click 事件（移动端也会触发，但为了统一体验，利用触摸放置）
+        // 元件库点击（放置待命）
         function setupLibrary() {
             document.querySelectorAll('.comp-item[data-type]').forEach(item => {
                 item.addEventListener('click', (e) => {
@@ -1051,15 +1065,6 @@
                     document.getElementById('wireToolBtn').classList.remove('active');
                     document.getElementById('hintMessage').innerHTML = `👉 点击设计区放置${pendingAddType==='bulb'?'灯泡':pendingAddType==='battery'?'电源':'开关'}`;
                 });
-            });
-            // 使用触摸放置：监听 canvas 的 click 事件，但注意与 tap 区分。这里简单处理：在非拖拽且未长按时，如果 pendingAddType 存在则放置
-            canvas.addEventListener('click', (e) => {
-                if (pendingAddType) {
-                    const { mx, my } = getCanvasCoords(e);
-                    addComponent(pendingAddType, mx, my);
-                    pendingAddType = null;
-                    e.preventDefault();
-                }
             });
         }
 
