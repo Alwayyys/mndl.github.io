@@ -19,6 +19,7 @@
             justify-content: center;
             align-items: center;
             padding: 20px;
+            overflow-x: auto;
         }
 
         .app-container {
@@ -30,35 +31,8 @@
             overflow: hidden;
             display: flex;
             flex-direction: column;
-        }
-
-        .task-requirements {
-            background: #2c3e2f;
-            color: #f9f3cf;
-            padding: 12px 20px;
-            border-bottom: 3px solid #ffb347;
-            font-size: 0.9rem;
-        }
-        .task-requirements h4 {
-            margin: 0 0 6px 0;
-            font-size: 1rem;
-            display: flex;
-            align-items: center;
-            gap: 8px;
-        }
-        .task-requirements ul {
-            margin: 0;
-            padding-left: 20px;
-            display: flex;
-            flex-wrap: wrap;
-            gap: 20px;
-            list-style: none;
-        }
-        .task-requirements li {
-            font-size: 0.85rem;
-            background: #1e2a1e;
-            padding: 2px 12px;
-            border-radius: 20px;
+            transform-origin: top center;
+            transition: transform 0.1s ease;
         }
 
         .hint-area {
@@ -101,12 +75,14 @@
             justify-content: center;
             align-items: center;
             padding: 10px;
+            overflow: auto;
         }
         .canvas-wrapper {
             background: #e2d5b6;
             padding: 8px;
             border-radius: 12px;
             box-shadow: inset 0 0 0 2px #fef0cf;
+            display: inline-block;
         }
         canvas {
             display: block;
@@ -118,7 +94,7 @@
 
         .components-bar {
             flex: 1;
-            min-width: 140px;  /* 变窄 */
+            min-width: 140px;
             background: #f4efdf;
             padding: 20px 12px;
             display: flex;
@@ -181,44 +157,15 @@
         .tool-btn.active { background: #f39c12; box-shadow: 0 0 0 2px #ffe0a3; color: #2c2b26; }
         .tool-btn:active { transform: scale(0.96); }
 
-        .instructions {
-            background: #cfbc8f;
-            color: #2c2e2a;
-            padding: 10px 20px;
-            font-size: 0.8rem;
-            display: flex;
-            flex-wrap: wrap;
-            justify-content: center;
-            gap: 16px;
-            border-top: 2px solid #b59a5e;
-        }
-        .instructions span {
-            background: #fef0cf;
-            padding: 4px 10px;
-            border-radius: 30px;
-            display: inline-flex;
-            align-items: center;
-            gap: 6px;
-        }
         @media (max-width: 780px) { .workspace { flex-direction: column; } .design-area { min-width: auto; } }
     </style>
 </head>
 <body>
-<div class="app-container">
-    <div class="task-requirements">
-        <h4>📋 任务要求</h4>
-        <ul>
-            <li>🔋 房间只有一个电源，需要安装两盏灯</li>
-            <li>🔘 两个开关分别控制两盏灯</li>
-            <li>💡 灯泡和开关布局合理</li>
-            <li>📐 房间内电路清晰稳固整洁</li>
-        </ul>
-    </div>
-
+<div class="app-container" id="appContainer">
     <div class="hint-area">
         <div class="hint-text">
             <span>💡 提示栏</span>
-            <span id="hintMessage">✨ 短按=点击/选中/开关切换 | 长按=拖拽移动元件/家具</span>
+            <span id="hintMessage">✨ 点击电路元件栏的元件添加至房间图中</span>
             <div class="status-led" id="hintLed"></div>
         </div>
     </div>
@@ -242,21 +189,17 @@
 
     <div class="toolbar">
         <button class="tool-btn" id="resetRoomBtn">🏠 重置家具位置</button>
-          <button class="tool-btn" id="clearSelectedBtn">🗑️ 清除所选电路元件</button>
-        <button class="tool-btn" id="clearSelectedWireBtn">✂️ 清除选中导线</button>
+        <button class="tool-btn" id="clearSelectedBtn">🗑️ 清除所选电路元件</button>
+        <button class="tool-btn" id="clearSelectedWireBtn">✂️ 清除选中导线</button>  
         <button class="tool-btn" id="addWaypointBtn">📍 导线增加直角控制点</button>
-    </div>
-
-    <div class="instructions">
-        <span>🪑 改变房间布局：可长按拖拽门窗/床/桌</span>
-        <span>🔌 整理导线：单击导线选中，点击“增加直角控制点”添加拐点，长按拐点拖动</span>
-        <span>🔘 开关元件：单击文字区切换闭合/断开，长按空白处拖拽移动</span>
+        <button class="tool-btn" id="zoomOutBtn">🔍 缩小</button>
+        <button class="tool-btn" id="zoomInBtn">🔍 放大</button>
     </div>
 </div>
 
 <script>
     (function(){
-        // ----- 并查集 (管理引脚) -----
+        // ========== 1. 并查集 ==========
         class UnionFind {
             constructor() {
                 this.parent = new Map();
@@ -301,7 +244,8 @@
             }
         }
 
-        // ----- 全局变量 -----
+        // ========== 全局变量 ==========
+        const container = document.getElementById('appContainer');
         const canvas = document.getElementById('circuitCanvas');
         const ctx = canvas.getContext('2d');
         let width = 950, height = 580;
@@ -317,7 +261,7 @@
         let furnitures = [
             { id: 'door', name: '🚪 门', x: width-115, y: 200, w: 105, h: 180, text: '门' },
             { id: 'window', name: '🪟 窗户', x: 60, y: 30, w: 150, h: 120, text: '窗户' },
-            { id: 'bed', name: '🛏️ 床', x: 680, y: 420, w: 210, h: 150, text: '床' },
+            { id: 'bed', name: '🛏️ 床', x: 680, y: 420, w: 300, h: 150, text: '床' },
             { id: 'desk', name: '📚 书桌', x: 30, y: 450, w: 180, h: 120, text: '书桌' }
         ];
 
@@ -336,18 +280,25 @@
         let selectedCompId = null;
         let pendingAddType = null;
 
-        // 触摸长按拖拽 (长按时长400ms)
+        // 触摸长按拖拽
         let longPressTimer = null;
         let isLongPressing = false;
         let touchStartX = 0, touchStartY = 0;
         let pendingDragTarget = null;
         let touchActive = false;
 
-        // 元件尺寸放大1.5倍: 原来宽70高70 -> 105x105
+        // 缩放
+        let currentScale = 1.0;
+        const MIN_SCALE = 0.6;
+        const MAX_SCALE = 1.8;
+
+        // 元件尺寸
         const COMP_W = 105;
         const COMP_H = 105;
-        const TERMINAL_RADIUS = 9;   // 连接点半径加大，方便点击
-        const HIT_TERMINAL_RADIUS = 16; // 命中半径
+        const TERMINAL_RADIUS = 9;
+        const HIT_TERMINAL_RADIUS = 16;
+        const TERMINAL_LINE_LEN = 18;
+        const GRID_SIZE = 20;
 
         function generatePinId() { return nextPinId++; }
 
@@ -358,14 +309,18 @@
             uf.add(comp.pin1);
         }
 
-        // 获取元件引脚坐标 (0左/上,1右/下) - 根据放大后的尺寸
         function getTerminalCoords(comp, terminalIdx) {
             const cx = comp.x, cy = comp.y;
             if(terminalIdx === 0) return { x: cx - COMP_W/2 + 8, y: cy };
             else return { x: cx + COMP_W/2 - 8, y: cy };
         }
 
-        // 根据引脚ID获取所属元件以及端子索引
+        function getTerminalEndpoint(comp, terminalIdx) {
+            const base = getTerminalCoords(comp, terminalIdx);
+            if(terminalIdx === 0) return { x: base.x - TERMINAL_LINE_LEN, y: base.y };
+            else return { x: base.x + TERMINAL_LINE_LEN, y: base.y };
+        }
+
         function getComponentAndTerminalByPin(pinId) {
             for (let comp of components) {
                 if (comp.pin0 === pinId) return { comp, terminalIdx: 0 };
@@ -374,131 +329,77 @@
             return null;
         }
 
-        function updateCircuit() {
-            const pinToNode = new Map();
-            const sets = uf.getSets();
-            for (let [root, pinSet] of sets.entries()) {
-                for (let pin of pinSet) {
-                    pinToNode.set(pin, root);
-                }
-            }
-
-            const battery = components.find(c => c.type === 'battery');
-            if (!battery) {
-                components.forEach(c => { if(c.type === 'bulb') c.isLit = false; });
-                drawAll();
-                updateHintMessage(false, false);
-                return;
-            }
-            const plusNode = pinToNode.get(battery.pin0);
-            const minusNode = pinToNode.get(battery.pin1);
-            if (!plusNode || !minusNode) {
-                components.forEach(c => { if(c.type === 'bulb') c.isLit = false; });
-                drawAll();
-                updateHintMessage(false, false);
-                return;
-            }
-
-            const graph = new Map();
-            function addGraphEdge(u, v) {
-                if (u === v) return;
-                if (!graph.has(u)) graph.set(u, new Set());
-                if (!graph.has(v)) graph.set(v, new Set());
-                graph.get(u).add(v);
-                graph.get(v).add(u);
-            }
+        // ========== 导线避让元件辅助函数 ==========
+        function segmentIntersectsComponent(x1, y1, x2, y2, excludeComp) {
             for (let comp of components) {
-                if (comp.type === 'switch' && comp.closed === true) {
-                    const nodeA = pinToNode.get(comp.pin0);
-                    const nodeB = pinToNode.get(comp.pin1);
-                    if (nodeA && nodeB && nodeA !== nodeB) {
-                        addGraphEdge(nodeA, nodeB);
-                    }
+                if (comp === excludeComp) continue;
+                const left = comp.x - COMP_W/2;
+                const right = comp.x + COMP_W/2;
+                const top = comp.y - COMP_H/2;
+                const bottom = comp.y + COMP_H/2;
+                if (Math.max(x1, x2) < left || Math.min(x1, x2) > right ||
+                    Math.max(y1, y2) < top || Math.min(y1, y2) > bottom) continue;
+                function pointInRect(px, py) {
+                    return px >= left && px <= right && py >= top && py <= bottom;
                 }
+                if (pointInRect(x1, y1) || pointInRect(x2, y2)) return true;
+                if (segmentsIntersect(x1, y1, x2, y2, left, top, right, top)) return true;
+                if (segmentsIntersect(x1, y1, x2, y2, right, top, right, bottom)) return true;
+                if (segmentsIntersect(x1, y1, x2, y2, right, bottom, left, bottom)) return true;
+                if (segmentsIntersect(x1, y1, x2, y2, left, bottom, left, top)) return true;
             }
-
-            function bfsReachable(startNode) {
-                if (!graph.has(startNode) && startNode !== plusNode && startNode !== minusNode) {
-                    return new Set([startNode]);
-                }
-                const visited = new Set();
-                const queue = [startNode];
-                visited.add(startNode);
-                while (queue.length) {
-                    const cur = queue.shift();
-                    const neighbors = graph.get(cur) || new Set();
-                    for (let nb of neighbors) {
-                        if (!visited.has(nb)) {
-                            visited.add(nb);
-                            queue.push(nb);
-                        }
-                    }
-                }
-                return visited;
+            return false;
+        }
+        function segmentsIntersect(ax, ay, bx, by, cx, cy, dx, dy) {
+            function cross(ox, oy, px, py, qx, qy) {
+                return (px-ox)*(qy-oy) - (py-oy)*(qx-ox);
             }
-
-            const reachablePlus = bfsReachable(plusNode);
-            const reachableMinus = bfsReachable(minusNode);
-
-            let isShortCircuit = false;
-            for (let node of reachablePlus) {
-                if (reachableMinus.has(node)) {
-                    isShortCircuit = true;
-                    break;
-                }
-            }
-
-            if (isShortCircuit) {
-                components.forEach(c => { if(c.type === 'bulb') c.isLit = false; });
-                drawAll();
-                updateHintMessage(true, true);
-                return;
-            }
-
-            for (let bulb of components) {
-                if (bulb.type !== 'bulb') continue;
-                const nodeA = pinToNode.get(bulb.pin0);
-                const nodeB = pinToNode.get(bulb.pin1);
-                if (!nodeA || !nodeB) {
-                    bulb.isLit = false;
-                    continue;
-                }
-                const aInPlus = reachablePlus.has(nodeA);
-                const aInMinus = reachableMinus.has(nodeA);
-                const bInPlus = reachablePlus.has(nodeB);
-                const bInMinus = reachableMinus.has(nodeB);
-                if ((aInPlus && bInMinus) || (aInMinus && bInPlus)) {
-                    bulb.isLit = true;
-                } else {
-                    bulb.isLit = false;
-                }
-            }
-
-            drawAll();
-            updateHintMessage(false, isShortCircuit);
+            const o1 = cross(ax, ay, bx, by, cx, cy);
+            const o2 = cross(ax, ay, bx, by, dx, dy);
+            const o3 = cross(cx, cy, dx, dy, ax, ay);
+            const o4 = cross(cx, cy, dx, dy, bx, by);
+            if (o1 === 0 && onSegment(ax, ay, bx, by, cx, cy)) return true;
+            if (o2 === 0 && onSegment(ax, ay, bx, by, dx, dy)) return true;
+            if (o3 === 0 && onSegment(cx, cy, dx, dy, ax, ay)) return true;
+            if (o4 === 0 && onSegment(cx, cy, dx, dy, bx, by)) return true;
+            return (o1 > 0) !== (o2 > 0) && (o3 > 0) !== (o4 > 0);
+        }
+        function onSegment(px, py, qx, qy, rx, ry) {
+            return Math.min(px, qx) <= rx && rx <= Math.max(px, qx) &&
+                   Math.min(py, qy) <= ry && ry <= Math.max(py, qy);
         }
 
-        function updateHintMessage(isShort, shortFlag) {
-            const hintDiv = document.getElementById('hintMessage');
-            const ledDot = document.getElementById('hintLed');
-            if (shortFlag) {
-                hintDiv.innerHTML = "⚠️ 电路短路！电源正负极直接导通，所有灯泡不亮。请移除短路导线 ⚠️";
-                ledDot.style.backgroundColor = "#e74c3c";
-                return;
+        function findObstacleFreePath(start, end, startComp, endComp) {
+            const paths = [
+                [ { x: end.x, y: start.y } ],
+                [ { x: start.x, y: end.y } ]
+            ];
+            for (let waypoints of paths) {
+                let ok = true;
+                if (segmentIntersectsComponent(start.x, start.y, waypoints[0].x, waypoints[0].y, startComp)) ok = false;
+                if (ok && segmentIntersectsComponent(waypoints[0].x, waypoints[0].y, end.x, end.y, endComp)) ok = false;
+                if (ok) return waypoints;
             }
-            const anyLit = components.some(c => c.type === 'bulb' && c.isLit);
-            if (anyLit) {
-                hintDiv.innerHTML = "✅ 电路正常！闭合对应开关时相应灯泡亮起 ✅";
-                ledDot.style.backgroundColor = "#2ecc71";
-            } else {
-                const hasBattery = components.some(c => c.type === 'battery');
-                if (hasBattery && components.some(c => c.type === 'bulb')) {
-                    hintDiv.innerHTML = "❌ 未形成有效回路。请检查导线连接与开关状态，确保灯泡两端分别与电源正负极连通 ❌";
-                } else {
-                    hintDiv.innerHTML = "✨ 短按=点击/选中/开关切换 | 长按=拖拽移动元件/家具 ✨";
-                }
-                ledDot.style.backgroundColor = "#e67e22";
+            const midX = (start.x + end.x) / 2;
+            const midY = (start.y + end.y) / 2;
+            const offsets = [
+                { x: midX, y: start.y },
+                { x: midX, y: end.y },
+                { x: start.x, y: midY },
+                { x: end.x, y: midY }
+            ];
+            for (let off of offsets) {
+                let ok1 = !segmentIntersectsComponent(start.x, start.y, off.x, off.y, startComp);
+                let ok2 = !segmentIntersectsComponent(off.x, off.y, end.x, end.y, endComp);
+                if (ok1 && ok2) return [off];
             }
+            const detour = { x: start.x, y: end.y };
+            if (!segmentIntersectsComponent(start.x, start.y, detour.x, detour.y, startComp) &&
+                !segmentIntersectsComponent(detour.x, detour.y, end.x, end.y, endComp)) return [detour];
+            const detour2 = { x: end.x, y: start.y };
+            if (!segmentIntersectsComponent(start.x, start.y, detour2.x, detour2.y, startComp) &&
+                !segmentIntersectsComponent(detour2.x, detour2.y, end.x, end.y, endComp)) return [detour2];
+            return [];
         }
 
         function addWireByPins(pinA, pinB) {
@@ -508,15 +409,196 @@
                 (w.fromPinId === pinB && w.toPinId === pinA)
             );
             if (exist) return false;
+            
+            const infoA = getComponentAndTerminalByPin(pinA);
+            const infoB = getComponentAndTerminalByPin(pinB);
+            let waypoints = [];
+            if (infoA && infoB) {
+                const start = getTerminalEndpoint(infoA.comp, infoA.terminalIdx);
+                const end = getTerminalEndpoint(infoB.comp, infoB.terminalIdx);
+                waypoints = findObstacleFreePath(start, end, infoA.comp, infoB.comp);
+            }
+            
             uf.union(pinA, pinB);
             wires.push({
                 id: nextWireId++,
                 fromPinId: pinA,
                 toPinId: pinB,
-                waypoints: []
+                waypoints: waypoints
             });
             updateCircuit();
             return true;
+        }
+
+        // ========== 核心电路更新算法 (正确版：灯泡两端分别与正负极连通) ==========
+        function updateCircuit() {
+            // 1. 获取所有电气节点 (并查集集合)
+            const pinToNode = new Map();
+            const sets = uf.getSets();
+            for (let [root, pinSet] of sets.entries()) {
+                for (let pin of pinSet) {
+                    pinToNode.set(pin, root);
+                }
+            }
+
+            // 2. 找到电源正负极引脚所在的节点
+            const battery = components.find(c => c.type === 'battery');
+            if (!battery) {
+                components.forEach(c => { if(c.type === 'bulb') c.isLit = false; });
+                drawAll();
+                updateHintMessage(false, false);
+                return;
+            }
+            const plusNode = pinToNode.get(battery.pin0);  // 约定 pin0 为正极
+            const minusNode = pinToNode.get(battery.pin1); // pin1 为负极
+            if (!plusNode || !minusNode) {
+                components.forEach(c => { if(c.type === 'bulb') c.isLit = false; });
+                drawAll();
+                updateHintMessage(false, false);
+                return;
+            }
+
+            // 3. 构建完整导通图（包含所有导电元件：闭合开关 + 所有灯泡）
+            const graph = new Map(); // node -> [{ to, type, comp }]
+            function addEdge(u, v, type, comp) {
+                if (!graph.has(u)) graph.set(u, []);
+                if (!graph.has(v)) graph.set(v, []);
+                graph.get(u).push({ to: v, type, comp });
+                graph.get(v).push({ to: u, type, comp });
+            }
+
+            for (let comp of components) {
+                const nodeA = pinToNode.get(comp.pin0);
+                const nodeB = pinToNode.get(comp.pin1);
+                if (!nodeA || !nodeB || nodeA === nodeB) continue;
+
+                if (comp.type === 'switch') {
+                    if (comp.closed === true) {
+                        addEdge(nodeA, nodeB, 'switch', comp);
+                    }
+                } else if (comp.type === 'bulb') {
+                    // 灯泡始终视为导电元件（电阻性负载，但电流可以流过）
+                    addEdge(nodeA, nodeB, 'bulb', comp);
+                }
+            }
+
+            // BFS 通用函数（包含所有边）
+            function bfs(start) {
+                const visited = new Set();
+                const queue = [start];
+                visited.add(start);
+                while (queue.length) {
+                    const cur = queue.shift();
+                    const edges = graph.get(cur) || [];
+                    for (let edge of edges) {
+                        if (!visited.has(edge.to)) {
+                            visited.add(edge.to);
+                            queue.push(edge.to);
+                        }
+                    }
+                }
+                return visited;
+            }
+
+            // BFS 忽略灯泡（只走开关和导线，但导线已合并为节点，所以图中只有开关边）
+            function bfsNoBulb(start) {
+                const visited = new Set();
+                const queue = [start];
+                visited.add(start);
+                while (queue.length) {
+                    const cur = queue.shift();
+                    const edges = graph.get(cur) || [];
+                    for (let edge of edges) {
+                        if (edge.type === 'bulb') continue; // 关键：跳过灯泡
+                        if (!visited.has(edge.to)) {
+                            visited.add(edge.to);
+                            queue.push(edge.to);
+                        }
+                    }
+                }
+                return visited;
+            }
+
+            // 4. 整体回路可达性
+            const fullReach = bfs(plusNode);
+            const hasCompleteCircuit = fullReach.has(minusNode);
+
+            // 5. 短路检测：忽略灯泡的情况下，正极能否到达负极
+            const noBulbReach = bfsNoBulb(plusNode);
+            const isShortCircuit = noBulbReach.has(minusNode);
+
+            // 6. 判断每个灯泡是否点亮（正确逻辑：正极可到一端，且负极可到另一端）
+            function bfsExcludeBulb(startNode, excludeBulb) {
+                const visited = new Set();
+                const queue = [startNode];
+                visited.add(startNode);
+                while (queue.length) {
+                    const cur = queue.shift();
+                    const edges = graph.get(cur) || [];
+                    for (let edge of edges) {
+                        if (edge.comp === excludeBulb) continue;
+                        if (!visited.has(edge.to)) {
+                            visited.add(edge.to);
+                            queue.push(edge.to);
+                        }
+                    }
+                }
+                return visited;
+            }
+
+            function bulbHasCurrent(bulb) {
+                const nodeA = pinToNode.get(bulb.pin0);
+                const nodeB = pinToNode.get(bulb.pin1);
+                if (!nodeA || !nodeB) return false;
+                if (nodeA === nodeB) return false;
+
+                const fromPlus = bfsExcludeBulb(plusNode, bulb);
+                const fromMinus = bfsExcludeBulb(minusNode, bulb);
+
+                return (
+                    (fromPlus.has(nodeA) && fromMinus.has(nodeB)) ||
+                    (fromPlus.has(nodeB) && fromMinus.has(nodeA))
+                );
+            }
+
+            // 应用灯泡状态
+            for (let bulb of components) {
+                if (bulb.type !== 'bulb') continue;
+                if (!hasCompleteCircuit || isShortCircuit) {
+                    bulb.isLit = false;
+                } else {
+                    bulb.isLit = bulbHasCurrent(bulb);
+                }
+            }
+
+            drawAll();
+            updateHintMessage(isShortCircuit, hasCompleteCircuit);
+        }
+
+        function updateHintMessage(isShort, hasCircuit) {
+            const hintDiv = document.getElementById('hintMessage');
+            const ledDot = document.getElementById('hintLed');
+            if (isShort) {
+                hintDiv.innerHTML = "⚠️ 电路短路！ ⚠️";
+                ledDot.style.backgroundColor = "#e74c3c";
+                return;
+            }
+            const anyLit = components.some(c => c.type === 'bulb' && c.isLit);
+            if (anyLit) {
+                hintDiv.innerHTML = "✅ 电路正常！闭合对应开关，相应灯泡亮起 ✅";
+                ledDot.style.backgroundColor = "#2ecc71";
+            } else if (hasCircuit) {
+                hintDiv.innerHTML = "⚠️ 电路有回路但灯泡不在电流路径上⚠️";
+                ledDot.style.backgroundColor = "#f39c12";
+            } else {
+                const hasBattery = components.some(c => c.type === 'battery');
+                if (hasBattery && components.some(c => c.type === 'bulb')) {
+                    hintDiv.innerHTML = "❌ 未形成完整回路。请检查导线连接与开关状态，确保灯泡两端分别与电源正负极连通 ❌";
+                } else {
+                    hintDiv.innerHTML = "✨ 点击电路元件栏的元件添加至房间图中 ✨";
+                }
+                ledDot.style.backgroundColor = "#e67e22";
+            }
         }
 
         function rebuildUnionFind() {
@@ -540,10 +622,9 @@
             updateCircuit();
         }
 
-        // 清除选中的导线
         function clearSelectedWire() {
             if (selectedWireId === null) {
-                document.getElementById('hintMessage').innerHTML = "⚠️ 请先单击导线选中它（导线变红）再清除";
+                document.getElementById('hintMessage').innerHTML = "⚠️ 请先单击导线选中它再清除";
                 return;
             }
             const idx = wires.findIndex(w => w.id === selectedWireId);
@@ -564,7 +645,9 @@
                 document.getElementById('hintMessage').innerHTML = "⚠️ 房间只能有一个电源！请勿重复添加电池 ⚠️";
                 return false;
             }
-            const newComp = { id: nextCompId++, type: type, x: x, y: y };
+            const snapX = Math.round(x / GRID_SIZE) * GRID_SIZE;
+            const snapY = Math.round(y / GRID_SIZE) * GRID_SIZE;
+            const newComp = { id: nextCompId++, type: type, x: snapX, y: snapY };
             if (type === 'switch') newComp.closed = false;
             if (type === 'bulb') newComp.isLit = false;
             initComponentPins(newComp);
@@ -574,10 +657,9 @@
             return true;
         }
 
-        // 为选中的导线添加直角控制点
         function addWaypointToSelectedWire() {
             if (selectedWireId === null) {
-                document.getElementById('hintMessage').innerHTML = "⚠️ 请先单击导线选中它（导线变红）再添加拐点";
+                document.getElementById('hintMessage').innerHTML = "⚠️ 请先单击导线选中它再添加控制点";
                 return;
             }
             const wire = wires.find(w => w.id === selectedWireId);
@@ -591,14 +673,13 @@
             const infoA = getComponentAndTerminalByPin(wire.fromPinId);
             const infoB = getComponentAndTerminalByPin(wire.toPinId);
             if (!infoA || !infoB) return;
-            const start = getTerminalCoords(infoA.comp, infoA.terminalIdx);
-            const end = getTerminalCoords(infoB.comp, infoB.terminalIdx);
+            const start = getTerminalEndpoint(infoA.comp, infoA.terminalIdx);
+            const end = getTerminalEndpoint(infoB.comp, infoB.terminalIdx);
             
             let points = [start];
             if (wire.waypoints.length) points.push(...wire.waypoints);
             points.push(end);
             
-            // 找到最长的一段，在其中点添加控制点
             let maxLen = -1;
             let bestIdx = -1;
             for (let i = 0; i < points.length - 1; i++) {
@@ -619,7 +700,12 @@
             }
         }
 
-        // 图形绘制 - 元件尺寸放大
+        // 缩放
+        function zoomIn() { if (currentScale < MAX_SCALE) { currentScale = Math.min(MAX_SCALE, currentScale + 0.1); applyZoom(); } }
+        function zoomOut() { if (currentScale > MIN_SCALE) { currentScale = Math.max(MIN_SCALE, currentScale - 0.1); applyZoom(); } }
+        function applyZoom() { container.style.transform = `scale(${currentScale})`; }
+
+        // 绘图
         function drawFurniture(f) {
             ctx.save();
             ctx.fillStyle = "#c9b07e";
@@ -717,15 +803,22 @@
                     ctx.fillText("断开", x-18, y+8);
                 }
             }
-            // 绘制端子 (放大，易于点击)
+            // 短横线 + 端点
             for(let i=0;i<2;i++){
-                const tp = getTerminalCoords(comp, i);
+                const base = getTerminalCoords(comp, i);
+                const endPoint = getTerminalEndpoint(comp, i);
                 ctx.beginPath();
-                ctx.arc(tp.x, tp.y, TERMINAL_RADIUS, 0, 2*Math.PI);
+                ctx.moveTo(base.x, base.y);
+                ctx.lineTo(endPoint.x, endPoint.y);
+                ctx.strokeStyle = "#888888";
+                ctx.lineWidth = 3;
+                ctx.stroke();
+                ctx.beginPath();
+                ctx.arc(endPoint.x, endPoint.y, TERMINAL_RADIUS, 0, 2*Math.PI);
                 ctx.fillStyle = "#f5cb5c";
                 ctx.fill();
                 ctx.beginPath();
-                ctx.arc(tp.x, tp.y, TERMINAL_RADIUS-3, 0, 2*Math.PI);
+                ctx.arc(endPoint.x, endPoint.y, TERMINAL_RADIUS-3, 0, 2*Math.PI);
                 ctx.fillStyle = "#2c3e50";
                 ctx.fill();
             }
@@ -737,8 +830,8 @@
                 const infoA = getComponentAndTerminalByPin(wire.fromPinId);
                 const infoB = getComponentAndTerminalByPin(wire.toPinId);
                 if(!infoA || !infoB) continue;
-                const start = getTerminalCoords(infoA.comp, infoA.terminalIdx);
-                const end = getTerminalCoords(infoB.comp, infoB.terminalIdx);
+                const start = getTerminalEndpoint(infoA.comp, infoA.terminalIdx);
+                const end = getTerminalEndpoint(infoB.comp, infoB.terminalIdx);
                 ctx.beginPath();
                 ctx.moveTo(start.x, start.y);
                 if(wire.waypoints && wire.waypoints.length > 0) {
@@ -771,12 +864,12 @@
 
         function drawAll() {
             drawRoomBackground();
-            drawWires();
             for(let comp of components) drawComponent(comp);
+            drawWires(); // 导线最后绘制，确保在最上层
             if(isWireMode && selectedTerminalPin) {
                 const info = getComponentAndTerminalByPin(selectedTerminalPin);
                 if(info) {
-                    const pos = getTerminalCoords(info.comp, info.terminalIdx);
+                    const pos = getTerminalEndpoint(info.comp, info.terminalIdx);
                     ctx.beginPath();
                     ctx.arc(pos.x, pos.y, 18, 0, 2*Math.PI);
                     ctx.fillStyle = "#f0b27a";
@@ -806,12 +899,12 @@
             return { mx: 0, my: 0 };
         }
 
-        // 命中测试 (端子半径增大)
+        // 命中测试
         function hitTestTerminal(mx, my) {
             for(let comp of components) {
                 for(let t=0; t<2; t++) {
-                    const coord = getTerminalCoords(comp, t);
-                    if(Math.hypot(coord.x-mx, coord.y-my) <= HIT_TERMINAL_RADIUS) {
+                    const endpoint = getTerminalEndpoint(comp, t);
+                    if(Math.hypot(endpoint.x-mx, endpoint.y-my) <= HIT_TERMINAL_RADIUS) {
                         const pinId = (t===0) ? comp.pin0 : comp.pin1;
                         return { pinId, comp, terminalIdx: t };
                     }
@@ -854,8 +947,8 @@
                 const infoA = getComponentAndTerminalByPin(wire.fromPinId);
                 const infoB = getComponentAndTerminalByPin(wire.toPinId);
                 if(!infoA || !infoB) continue;
-                const start = getTerminalCoords(infoA.comp, infoA.terminalIdx);
-                const end = getTerminalCoords(infoB.comp, infoB.terminalIdx);
+                const start = getTerminalEndpoint(infoA.comp, infoA.terminalIdx);
+                const end = getTerminalEndpoint(infoB.comp, infoB.terminalIdx);
                 let points = [start];
                 if(wire.waypoints && wire.waypoints.length) points.push(...wire.waypoints);
                 points.push(end);
@@ -882,14 +975,15 @@
         function updateWaypointPosition(wireId, pointIndex, mx, my) {
             const wire = wires.find(w => w.id === wireId);
             if (wire && wire.waypoints && wire.waypoints[pointIndex]) {
-                wire.waypoints[pointIndex] = { x: mx, y: my };
+                const snapX = Math.round(mx / GRID_SIZE) * GRID_SIZE;
+                const snapY = Math.round(my / GRID_SIZE) * GRID_SIZE;
+                wire.waypoints[pointIndex] = { x: snapX, y: snapY };
                 drawAll();
                 return true;
             }
             return false;
         }
 
-        // 短按处理
         function handleTap(mx, my) {
             if (isWireMode) {
                 const hit = hitTestTerminal(mx, my);
@@ -950,8 +1044,14 @@
 
         function updateDrag(mx, my) {
             if (isDraggingComponent && draggedComp) {
-                draggedComp.x = Math.min(Math.max(mx + dragOffsetX, COMP_W/2 + 10), width - COMP_W/2 - 10);
-                draggedComp.y = Math.min(Math.max(my + dragOffsetY, COMP_H/2 + 10), height - COMP_H/2 - 10);
+                let newX = mx + dragOffsetX;
+                let newY = my + dragOffsetY;
+                newX = Math.round(newX / GRID_SIZE) * GRID_SIZE;
+                newY = Math.round(newY / GRID_SIZE) * GRID_SIZE;
+                newX = Math.min(Math.max(newX, COMP_W/2 + 10), width - COMP_W/2 - 10);
+                newY = Math.min(Math.max(newY, COMP_H/2 + 10), height - COMP_H/2 - 10);
+                draggedComp.x = newX;
+                draggedComp.y = newY;
                 drawAll();
                 return true;
             }
@@ -1105,7 +1205,7 @@
             wireBtn.addEventListener('click', () => {
                 isWireMode = !isWireMode;
                 selectedTerminalPin = null;
-                if(isWireMode) { wireBtn.classList.add('active'); document.getElementById('hintMessage').innerHTML = "🔌 连线模式：依次点击两个元件的端子圆点"; }
+                if(isWireMode) { wireBtn.classList.add('active'); document.getElementById('hintMessage').innerHTML = "🔌 连线模式：依次点击两个元件的端子短横线端点"; }
                 else { wireBtn.classList.remove('active'); document.getElementById('hintMessage').innerHTML = "✏️ 退出连线模式"; }
                 drawAll();
             });
@@ -1121,13 +1221,15 @@
                 furnitures = [
                     { id: 'door', name: '🚪 门', x: width-115, y: 200, w: 105, h: 180, text: '门' },
                     { id: 'window', name: '🪟 窗户', x: 60, y: 30, w: 150, h: 120, text: '窗户' },
-                    { id: 'bed', name: '🛏️ 床', x: 680, y: 420, w: 210, h: 150, text: '床' },
+                    { id: 'bed', name: '🛏️ 床', x: 680, y: 420, w: 300, h: 150, text: '床' },
                     { id: 'desk', name: '📚 书桌', x: 30, y: 450, w: 180, h: 120, text: '书桌' }
                 ];
                 drawAll();
             });
             document.getElementById('clearSelectedWireBtn').addEventListener('click', () => { clearSelectedWire(); });
             document.getElementById('addWaypointBtn').addEventListener('click', () => { addWaypointToSelectedWire(); });
+            document.getElementById('zoomInBtn').addEventListener('click', () => { zoomIn(); });
+            document.getElementById('zoomOutBtn').addEventListener('click', () => { zoomOut(); });
         }
 
         function init() {
@@ -1137,6 +1239,7 @@
             canvas.addEventListener('touchmove', onTouchMove, { passive: false });
             canvas.addEventListener('touchend', onTouchEnd);
             canvas.addEventListener('touchcancel', onTouchCancel);
+            applyZoom();
             updateCircuit();
         }
 
